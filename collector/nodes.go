@@ -230,9 +230,8 @@ func NewNodes(logger log.Logger, client *http.Client, url *url.URL, all bool, no
 				Value: func(nodeStatsResp nodeStatsResponse, nodeKey string, node NodeStatsNodeResponse) float64 {
 					if _, ok := nodeStatsResp.Nodes[nodeKey]; ok {
 						return 1
-					} else {
-						return 0
 					}
+					return 0
 				},
 				Labels: defaultNodeLabelValues,
 			},
