@@ -119,7 +119,16 @@ var (
 	defaultCacheMissLabelValues = func(cluster string, node NodeStatsNodeResponse) []string {
 		return append(defaultNodeLabelValues(cluster, node), "miss")
 	}
+
+	currentKnownNodes KnownNodes
 )
+
+type knownNode struct {
+	Type   prometheus.ValueType
+	Desc   *prometheus.Desc
+	Value  func(nodeStatsResp nodeStatsResponse, nodeKey string, node NodeStatsNodeResponse) float64
+	Labels func(cluster string, node NodeStatsNodeResponse) []string
+}
 
 type nodeMetric struct {
 	Type   prometheus.ValueType
@@ -163,6 +172,11 @@ type filesystemIODeviceMetric struct {
 	Labels func(cluster string, node NodeStatsNodeResponse, device string) []string
 }
 
+// Know Nodes
+type KnownNodes struct {
+	Nodes map[string]NodeStatsNodeResponse
+}
+
 // Nodes information struct
 type Nodes struct {
 	logger log.Logger
@@ -174,6 +188,7 @@ type Nodes struct {
 	up                              prometheus.Gauge
 	totalScrapes, jsonParseFailures prometheus.Counter
 
+	knownNodes                []*knownNode
 	nodeMetrics               []*nodeMetric
 	gcCollectionMetrics       []*gcCollectionMetric
 	breakerMetrics            []*breakerMetric
@@ -203,6 +218,25 @@ func NewNodes(logger log.Logger, client *http.Client, url *url.URL, all bool, no
 			Name: prometheus.BuildFQName(namespace, "node_stats", "json_parse_failures"),
 			Help: "Number of errors while parsing JSON.",
 		}),
+
+		knownNodes: []*knownNode{
+			{
+				Type: prometheus.GaugeValue,
+				Desc: prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "known_node", "up"),
+					"Known Node UP",
+					defaultNodeLabels, nil,
+				),
+				Value: func(nodeStatsResp nodeStatsResponse, nodeKey string, node NodeStatsNodeResponse) float64 {
+					if _, ok := nodeStatsResp.Nodes[nodeKey]; ok {
+						return 1
+					} else {
+						return 0
+					}
+				},
+				Labels: defaultNodeLabelValues,
+			},
+		},
 
 		nodeMetrics: []*nodeMetric{
 			{
@@ -1842,6 +1876,16 @@ func (c *Nodes) fetchAndDecodeNodeStats() (nodeStatsResponse, error) {
 	return nsr, nil
 }
 
+func (c *Nodes) updateKnownNodes(nodeStatsResp nodeStatsResponse) KnownNodes {
+	if currentKnownNodes.Nodes == nil {
+		currentKnownNodes.Nodes = map[string]NodeStatsNodeResponse{}
+	}
+	for nodeKey, node := range nodeStatsResp.Nodes {
+		currentKnownNodes.Nodes[nodeKey] = node
+	}
+	return currentKnownNodes
+}
+
 // Collect gets nodes metric values
 func (c *Nodes) Collect(ch chan<- prometheus.Metric) {
 	c.totalScrapes.Inc()
@@ -1947,5 +1991,18 @@ func (c *Nodes) Collect(ch chan<- prometheus.Metric) {
 			}
 		}
 
+	}
+
+	c.updateKnownNodes(nodeStatsResp)
+
+	for nodeKey, node := range currentKnownNodes.Nodes {
+		for _, kn := range c.knownNodes {
+			ch <- prometheus.MustNewConstMetric(
+				kn.Desc,
+				kn.Type,
+				kn.Value(nodeStatsResp, nodeKey, node),
+				kn.Labels(nodeStatsResp.ClusterName, node)...,
+			)
+		}
 	}
 }
