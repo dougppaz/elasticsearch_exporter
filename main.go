@@ -201,6 +201,13 @@ func main() {
 	prometheus.MustRegister(collector.NewClusterHealth(logger, httpClient, esURL))
 	prometheus.MustRegister(collector.NewNodes(logger, httpClient, esURL, *esAllNodes, *esNode))
 
+	iCN := collector.NewClusterNodes(logger, httpClient, esURL)
+	prometheus.MustRegister(iCN)
+	if registerErr := clusterInfoRetriever.RegisterConsumer(iCN); registerErr != nil {
+		_ = level.Error(logger).Log("msg", "failed to register cluster nodes collector in cluster info")
+		os.Exit(1)
+	}
+
 	if *esExportIndices || *esExportShards {
 		prometheus.MustRegister(collector.NewShards(logger, httpClient, esURL))
 		iC := collector.NewIndices(logger, httpClient, esURL, *esExportShards, *esExportIndexAliases)
