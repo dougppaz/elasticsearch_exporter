@@ -127,9 +127,8 @@ func NewClusterNodes(logger log.Logger, client *http.Client, url *url.URL) *Clus
 				Value: func(knowNodes KnowNodes, currentNodes CurrentNodes, knowNodeName string, knowNode ClusterNodeStatsNodeResponse) float64 {
 					if _, ok := currentNodes[knowNodeName]; ok {
 						return 1
-					} else {
-						return 0
 					}
+					return 0
 				},
 				Labels: defaultKnowClusterNodeLabelValues,
 			},
